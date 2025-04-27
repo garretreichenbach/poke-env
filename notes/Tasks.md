@@ -1,16 +1,16 @@
 # Task List
 
-## Understanding the Components
+## 1. Understanding the Components
 
-- [x]  Read through the documentation on Poke-Env
-- [x]  Explore Pokémon Showdown and its battle interface
-- [x]  Review the `LLMAgentBase` class structure and functionality
-- [x]  Understand the `TemplateAgent` structure
+- [x]  Read through the documentation on Poké-Env [Poké-Env Notes](1/1.1%20-%20Poke-Env.md)
+- [x]  Explore Pokémon Showdown and its battle interface [Pokémon Showdown Notes](1/1.2%20-%20Pokemon%20Showdown.md)
+- [x]  Review the `LLMAgentBase` class structure and functionality [LLMAgentBase Notes](1/1.3%20-%20LLM%20Agent%20Base.md)
+- [x]  Understand the `TemplateAgent` structure and its purpose [TemplateAgent Notes](1/1.4%20-%20Template%20Agent.md)
 
 ## Setting Up Your Environment
 
 - [x]  Install Python if not already installed
-- [x]  Install poke-env library (`pip install poke-env`)
+- [x]  Install poké-env library (`pip install poke-env`)
 - [x]  Clone/download source code from the repository
 - [ ]  Set up access to Pokémon Showdown server
 
