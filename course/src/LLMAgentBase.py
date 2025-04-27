@@ -151,15 +151,24 @@ class LLMAgentBase(Player):
 
 	def _find_move_by_name(self, battle: Battle, move_name: str) -> Optional[Move]:
 		normalized_name = normalize_name(move_name)
+
+		# Special case for Struggle
+		if normalized_name == "struggle" and not battle.available_moves:
+			# Return a default move when no moves are available
+			# This will trigger the default action which is Struggle in Pokémon Showdown
+			return None
+
 		# Prioritize exact ID match
 		for move in battle.available_moves:
 			if move.id == normalized_name:
 				return move
-		# Fallback: Check display name (less reliable)
+
+		# Fallback: Try approximate matching
 		for move in battle.available_moves:
-			if move.name.lower() == move_name.lower():
-				print(f"Warning: Matched move by display name '{move.name}' instead of ID '{move.id}'. Input was '{move_name}'.")
+			if normalized_name in move.id:
+				print(f"Warning: Matched move '{move.id}' using partial match. Input was '{move_name}'.")
 				return move
+
 		return None
 
 	def _find_pokemon_by_name(self, battle: Battle, pokemon_name: str) -> Optional[Pokemon]:
@@ -185,6 +194,11 @@ class LLMAgentBase(Player):
 			if function_name == "choose_move":
 				move_name = args.get("move_name")
 				if move_name:
+					# Special case for Struggle
+					if normalize_name(move_name) == "struggle" and not battle.available_moves:
+						print("AI Decision: Using Struggle (default move when no moves available).")
+						return self.choose_default_move()
+
 					chosen_move = self._find_move_by_name(battle, move_name)
 					if chosen_move and chosen_move in battle.available_moves:
 						action_taken = True
@@ -226,7 +240,7 @@ class LLMAgentBase(Player):
 				return self.choose_random_move(battle)
 			else:
 				print("AI Fallback: No moves or switches available. Using Struggle/Default.")
-				return self.choose_default_move(battle)
+				return self.choose_default_move()
 
 	async def _get_llm_decision(self, battle_state: str) -> Dict[str, Any]:
 		raise NotImplementedError("Subclasses must implement _get_llm_decision")

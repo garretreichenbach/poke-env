@@ -2,7 +2,9 @@ import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from LLMAgentBase import LLMAgentBase
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
+from poke_env.environment.battle import Battle
+from poke_env.environment.move import Move
 
 # Load environment variables from .env file
 load_dotenv()
@@ -11,7 +13,10 @@ load_dotenv()
 class ClaudeAgent(LLMAgentBase):
 	"""Uses Claude AI API for battle decisions."""
 
-	def __init__(self, api_key: str = None, model: str = "claude-3-opus-20240229", *args, **kwargs):
+	def __init__(self, api_key: str = None, model: str = "claude-3-opus-20240229", avatar: str = "cynthia", *args, **kwargs):
+		# Set avatar before calling parent constructor
+		kwargs['avatar'] = avatar
+		kwargs['start_timer_on_battle_start'] = True
 		super().__init__(*args, **kwargs)
 		self.model = model
 		# Use API key from environment variable if not provided
@@ -25,16 +30,16 @@ class ClaudeAgent(LLMAgentBase):
 	async def _get_llm_decision(self, battle_state: str) -> Dict[str, Any]:
 		system_prompt = (
 			"You are an expert Pokémon battle AI capable of making strategic decisions in Pokémon battles. "
-			"Your goal is to analyze the current battle state and select the optimal move or switch."
-			"\n\n"
-			"You MUST use one of these functions to make your decision:"
-			"\n"
-			"1. choose_move(move_name): Use this to select a move from your available moves."
-			"\n"
-			"2. choose_switch(pokemon_name): Use this to switch to another Pokémon in your team."
-			"\n\n"
-			"Always respond with ONLY the function call in this exact format:"
-			"choose_move(\"move_name\") or choose_switch(\"pokemon_name\")"
+			"Your goal is to analyze the current battle state and select the optimal move or switch based on:"
+			"\n- Type advantages and disadvantages"
+			"\n- Current HP and status conditions"
+			"\n- Move power, accuracy, and effects"
+			"\n- Weather and field conditions"
+			"\n- Team composition and available switches"
+			"\n\nSpecial cases to be aware of:"
+			"\n- If no moves are available (empty list under 'Available moves'), choose 'Struggle' as your move."
+			"\n- If no switches are available (empty list under 'Available switches'), you cannot switch out."
+			"\n\nMake the most strategic choice possible with the information available."
 		)
 
 		user_prompt = f"Current battle state:\n{battle_state}\n\nWhat is your next move?"
@@ -42,37 +47,16 @@ class ClaudeAgent(LLMAgentBase):
 		try:
 			response = await self._run_anthropic_call(system_prompt, user_prompt)
 
-			# Add after receiving the response
-			print("RESPONSE TYPE:", type(response))
-			print("RESPONSE ATTRIBUTES:", dir(response))
-			print("RESPONSE CONTENT:", response.content)
-			if hasattr(response, 'model_dump'):
-				print("RESPONSE MODEL DUMP:", response.model_dump())
+			# Check for tool_use in response
+			for content_item in response.content:
+				if hasattr(content_item, 'type') and content_item.type == 'tool_use':
+					function_name = content_item.name
+					arguments = content_item.input
 
-			# Get the text content from the response
-			if hasattr(response, 'content') and response.content:
-				content_text = response.content[0].text if isinstance(response.content, list) else response.content
+					if function_name in ["choose_move", "choose_switch"]:
+						return {"decision": {"name": function_name, "arguments": arguments}}
 
-				# Simplified parsing for direct function calls
-				text = content_text.strip()
-
-				# Parse for choose_move
-				if "choose_move" in text:
-					import re
-					match = re.search(r'choose_move\(["\']([^"\']+)["\']', text)
-					if match:
-						move_name = match.group(1)
-						return {"decision": {"name": "choose_move", "arguments": {"move_name": move_name}}}
-
-				# Parse for choose_switch
-				if "choose_switch" in text:
-					import re
-					match = re.search(r'choose_switch\(["\']([^"\']+)["\']', text)
-					if match:
-						pokemon_name = match.group(1)
-						return {"decision": {"name": "choose_switch", "arguments": {"pokemon_name": pokemon_name}}}
-
-			# If we reach here, no valid function call was found
+			# If we reach here, no tool_use was found
 			return {"error": "Could not parse a valid function call from Claude's response"}
 
 		except Exception as e:
@@ -85,26 +69,26 @@ class ClaudeAgent(LLMAgentBase):
 		"""Make the actual call to Claude API"""
 		tools = [{
 			"name": "choose_move",
-			"description": "Use this function to select a move from your available moves",
+			"description": "Select a move from your available moves",
 			"input_schema": {
 				"type": "object",
 				"properties": {
 					"move_name": {
 						"type": "string",
-						"description": "The name of the move to use"
+						"description": "The name or ID of the move to use. Must be one of the available moves."
 					}
 				},
 				"required": ["move_name"]
 			}
 		}, {
 			"name": "choose_switch",
-			"description": "Use this function to switch to another Pokémon in your team",
+			"description": "Switch to another Pokémon in your team",
 			"input_schema": {
 				"type": "object",
 				"properties": {
 					"pokemon_name": {
 						"type": "string",
-						"description": "The name of the Pokémon to switch to"
+						"description": "The name of the Pokémon to switch to. Must be one of the available switches."
 					}
 				},
 				"required": ["pokemon_name"]
@@ -120,7 +104,8 @@ class ClaudeAgent(LLMAgentBase):
 					{"role": "user", "content": user_prompt}
 				],
 				tools=tools,
-				max_tokens=1024
+				max_tokens=1024,
+				temperature=0.2  # Lower temperature for more consistent responses
 			)
 
 		# Run in an executor to prevent blocking the event loop
@@ -129,29 +114,3 @@ class ClaudeAgent(LLMAgentBase):
 		response = await loop.run_in_executor(None, make_api_call)
 
 		return response
-
-	def _parse_text_response(self, content):
-		"""Fallback parser for extracting decisions from text responses"""
-		text = content[0].text
-
-		if "choose_move" in text.lower():
-			# Try to extract move name from text
-			# This is a simplistic implementation
-			for line in text.split('\n'):
-				if "choose_move" in line.lower():
-					parts = line.split('"')
-					if len(parts) >= 3:
-						move_name = parts[1]
-						return {"decision": {"name": "choose_move", "arguments": {"move_name": move_name}}}
-
-		if "choose_switch" in text.lower():
-			# Try to extract pokemon name from text
-			for line in text.split('\n'):
-				if "choose_switch" in line.lower():
-					parts = line.split('"')
-					if len(parts) >= 3:
-						pokemon_name = parts[1]
-						return {"decision": {"name": "choose_switch", "arguments": {"pokemon_name": pokemon_name}}}
-
-		# If no clear decision found, return error
-		return {"error": "Could not parse decision from text response"}
