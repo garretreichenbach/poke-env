@@ -1,10 +1,10 @@
 import os
+from typing import Any, Dict
+
 from anthropic import Anthropic
 from dotenv import load_dotenv
+
 from LLMAgentBase import LLMAgentBase
-from typing import Any, Dict, Optional, List
-from poke_env.environment.battle import Battle
-from poke_env.environment.move import Move
 
 # Load environment variables from .env file
 load_dotenv()
